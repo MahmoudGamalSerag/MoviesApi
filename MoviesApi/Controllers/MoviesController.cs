@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Http;
+﻿using AutoMapper;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
 namespace MoviesApi.Controllers
@@ -7,71 +8,45 @@ namespace MoviesApi.Controllers
     [ApiController]
     public class MoviesController : ControllerBase
     {
-        private readonly ApplicationDbContext _context;
+        private readonly IMovieService _movieService;
+        private readonly IGenreService _genreService;
+        private readonly IMapper _mapper;
+
+        public MoviesController(IMovieService movieService, IGenreService genreService, IMapper mapper)
+        {
+            _movieService = movieService;
+            _genreService = genreService;
+            _mapper = mapper;
+        }
+
         private new List<string> _allowedExtensions = new List<string> { ".jpg", ".png", ".jpeg" };
         private const int _maxPosterSize = 2 * 1024 * 1024; // 2 MB
 
-        public MoviesController(ApplicationDbContext context)
-        {
-            _context = context;
-        }
+       
         [HttpGet]
         public async Task<IActionResult> GetAllAsync()
         {
-            var movies = await _context.Movies.Include(m=>m.Genre )
-                .OrderByDescending(m=>m.Rate)
-                .Select(m=>new MovieDetailsDto
-                {
-                    Id = m.Id,
-                    Title = m.Title,
-                    StoryLine = m.StoryLine,
-                    Year = m.Year,
-                    Rate = m.Rate,
-                    Poster = m.Poster,
-                    GenreId = m.GenreId,
-                    GenreName = m.Genre.Name
-                })
-                .ToListAsync();
-            return Ok(movies);
+            var movies = await _movieService.GetAll();
+            var data=_mapper.Map<IEnumerable<MovieDetailsDto>>(movies);
+            return Ok(data);
         }
         [HttpGet("{id}")]
         public async Task<IActionResult> GetByIdAsync(int id)
         {
-            var movie = await _context.Movies.Include(m=>m.Genre).SingleOrDefaultAsync(m=>m.Id==id);
+            var movie = await _movieService.GetById(id);
             if (movie == null)
             {
                 return NotFound();
             }
-            var movieDetails = new MovieDetailsDto
-            {
-                Id = movie.Id,
-                Title = movie.Title,
-                StoryLine = movie.StoryLine,
-                Year = movie.Year,
-                Rate = movie.Rate,
-                Poster = movie.Poster,
-                GenreId = movie.GenreId,
-                GenreName = movie.Genre.Name
-            };
+            var movieDetails = _mapper.Map<MovieDetailsDto>(movie);
             return Ok(movie);
         }
         [HttpGet("genre")]
-        public async Task<IActionResult> GetByGenreIdAsync(int id)
+        public async Task<IActionResult> GetByGenreIdAsync(byte id)
         {
-            var movies = await _context.Movies.Include(m => m.Genre).Where(m => m.GenreId == id)
-                .Select(m => new MovieDetailsDto
-                {
-                    Id = m.Id,
-                    Title = m.Title,
-                    StoryLine = m.StoryLine,
-                    Year = m.Year,
-                    Rate = m.Rate,
-                    Poster = m.Poster,
-                    GenreId = m.GenreId,
-                    GenreName = m.Genre.Name
-                })
-                .ToListAsync();
-            return Ok(movies);
+            var movies = await _movieService.GetAll(id);
+            var data = _mapper.Map<IEnumerable<MovieDetailsDto>>(movies);
+            return Ok(data);
         }
 
         [HttpPost]
@@ -85,31 +60,23 @@ namespace MoviesApi.Controllers
             {
                 return BadRequest("File size exceeds the limit");
             }
-            var ValidGenre =  _context.Genres.Any(g => g.Id == createMovieDto.GenreId);
-            if (!ValidGenre)
+            var ValidGenre =await  _genreService.GetById(createMovieDto.GenreId);
+            if (ValidGenre is null)
             {
                 return BadRequest("Invalid Genre");
             }
             using var stream=new MemoryStream();
             await createMovieDto.Poster.CopyToAsync(stream);
-            var movie = new Movie
-            {
-                Title = createMovieDto.Title,
-                StoryLine = createMovieDto.StoryLine,
-                Year = createMovieDto.Year,
-                Rate = createMovieDto.Rate,
-                Poster = stream.ToArray(),
-                GenreId = createMovieDto.GenreId
-            };
+            var movie = _mapper.Map<Movie>(createMovieDto);
+            movie.Poster = stream.ToArray();
 
-            await _context.Movies.AddAsync(movie);
-            await _context.SaveChangesAsync();
+            _movieService.Create(movie);
             return Ok(movie);
         }
         [HttpPut("{id}")]
         public async Task<IActionResult> UpdateAsync(int id, [FromForm] MovieDto updateMovieDto)
         {
-            var movie = await _context.Movies.FindAsync(id);
+            var movie = await _movieService.GetById(id);
             if (movie == null)
             {
                 return NotFound($"No Movie was found with the id {id} ");
@@ -128,32 +95,30 @@ namespace MoviesApi.Controllers
                 await updateMovieDto.Poster.CopyToAsync(stream);
                 movie.Poster = stream.ToArray();
             }
-            var ValidGenre = _context.Genres.Any(g => g.Id == updateMovieDto.GenreId);
-            if (!ValidGenre)
+            var ValidGenre = await _genreService.GetById(updateMovieDto.GenreId);
+            if (ValidGenre is null)
             {
                 return BadRequest("Invalid Genre");
             }
-           
+
             movie.Title = updateMovieDto.Title;
             movie.StoryLine = updateMovieDto.StoryLine;
             movie.Year = updateMovieDto.Year;
             movie.Rate = updateMovieDto.Rate;
             movie.GenreId = updateMovieDto.GenreId;
-            _context.Update(movie);
-            await _context.SaveChangesAsync();
-            return Ok(movie);
+            var updatedMovie = _movieService.Update(movie);
+            return Ok(updatedMovie);
         }
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteAsync(int id)
         {
-            var movie = await _context.Movies.FindAsync(id);
+            var movie = await _movieService.GetById(id);
             if (movie == null)
             {
                 return NotFound($"No Movie was found with the id {id} ");
             }
-            _context.Remove(movie);
-            await _context.SaveChangesAsync();
-            return Ok(movie);
+            var DeletedMovie = _movieService.Delete(movie);
+            return Ok(DeletedMovie);
         }
     }
 }

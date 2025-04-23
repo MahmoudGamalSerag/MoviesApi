@@ -1,5 +1,6 @@
 
 
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
@@ -10,6 +11,9 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddCors();
 builder.Services.AddSwaggerGen();
+builder.Services.AddTransient<IGenreService, GenreService>();
+builder.Services.AddTransient<IMovieService, MovieService>();
+builder.Services.AddAutoMapper(typeof(Program));
 
 var app = builder.Build();
 
