@@ -1,6 +1,6 @@
 ﻿using AutoMapper;
 
-namespace MoviesApi.Helper
+namespace MoviesApi.Helpers
 {
     public class MappingProfile : Profile
     {
